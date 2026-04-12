@@ -22,7 +22,8 @@ const envSchema = z.object({
   CLOUDINARY_API_KEY: z.string().optional().default(''),
   CLOUDINARY_API_SECRET: z.string().optional().default(''),
   
-  CLIENT_URL: z.string().url().default('http://localhost:5173'),
+  CLIENT_URL: z.string().default('http://localhost:5173,http://localhost:8080'),
+
   
   SMTP_HOST: z.string().default('smtp-relay.brevo.com'),
   SMTP_PORT: z.string().default('587').transform(Number),
@@ -67,8 +68,9 @@ const config = {
     },
     
     cors: {
-        clientUrl: env.CLIENT_URL,
+        clientUrl: env.CLIENT_URL.split(',').map(url => url.trim()),
     },
+
     
     smtp: {
         host: env.SMTP_HOST,

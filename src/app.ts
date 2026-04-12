@@ -35,9 +35,10 @@ app.use(cookieParser());
 
 // CORS
 app.use(cors({
-    origin: [config.cors.clientUrl, 'http://localhost:8080'],
+    origin: [...config.cors.clientUrl, 'http://localhost:8080'],
     credentials: true
 }));
+
 
 // Basic route
 app.get('/health', (req, res) => {
