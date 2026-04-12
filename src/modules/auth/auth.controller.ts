@@ -75,7 +75,7 @@ export const verifyOtp = catchAsync(async (req: Request, res: Response): Promise
     user.otpExpiry = undefined;
     await user.save();
 
-    generateTokenAndSetCookie(user._id.toString(), res);
+    const token = generateTokenAndSetCookie(user._id.toString(), res);
 
     res.status(200).json({
       status: 'success',
@@ -85,8 +85,10 @@ export const verifyOtp = catchAsync(async (req: Request, res: Response): Promise
         email: user.email,
         avatar: user.avatar,
         status: user.status,
+        token,
       }
     });
+
 });
 
 export const logout = catchAsync(async (req: Request, res: Response) => {

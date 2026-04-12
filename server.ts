@@ -5,6 +5,8 @@ import connectDB from "./src/config/db.js";
 import { connectRedis } from "./src/config/redis.js";
 import config from "./src/config/env.config.js";
 
+import jwt from "jsonwebtoken";
+
 // Create HTTP server
 const server = http.createServer(app);
 
@@ -16,10 +18,27 @@ export const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+});
+
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (token) {
+        jwt.verify(token, config.jwt.secret, (err: any, decoded: any) => {
+            if (err) return next(new Error("Authentication error"));
+            socket.data.user = decoded;
+            next();
+        });
+    } else {
+        // We can allow connection without token for now if necessary, 
+        // but for a chat app, most events should be protected.
+        next();
+    }
 });
 
 console.log("Socket.io initialized and waiting for connections...");
+
 
 
 

@@ -5,12 +5,17 @@ import config from '../config/env.config.js';
 
 export const protectRoute = async (req: Request | any, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const token = req.cookies.jwt;
+    let token = req.cookies.jwt;
+
+    if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        token = req.headers.authorization.split(' ')[1];
+    }
 
     if (!token) {
       res.status(401).json({ error: 'Unauthorized - No Token Provided' });
       return;
     }
+
 
     const decoded = jwt.verify(token, config.jwt.secret) as any;
 
