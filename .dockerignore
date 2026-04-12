@@ -6,5 +6,4 @@ dist
 *.md
 Dockerfile
 docker-compose.yml
-tsconfig.json
 tests
