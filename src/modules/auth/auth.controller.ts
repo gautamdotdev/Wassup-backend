@@ -3,20 +3,19 @@ import bcrypt from 'bcryptjs';
 import User from '../users/user.model.js';
 import generateTokenAndSetCookie from '../../utils/generateToken.js';
 import transporter from '../../utils/mailer.js';
+import { catchAsync, AppError } from '../../utils/errors.js';
+import config from '../../config/env.config.js';
 
-export const requestOtp = async (req: Request, res: Response): Promise<void> => {
-  try {
+export const requestOtp = catchAsync(async (req: Request, res: Response): Promise<void> => {
     const { email, name } = req.body;
 
     if (!email) {
-      res.status(400).json({ error: 'Please provide an email' });
-      return;
+      throw new AppError('Please provide an email', 400);
     }
 
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create user if they don't exist
       user = new User({
         name: name || email.split('@')[0], 
         email,
@@ -36,49 +35,39 @@ export const requestOtp = async (req: Request, res: Response): Promise<void> => 
 
     // Send Email
     const mailOptions = {
-        from: '"Wassup App" <gautammakwana.dev@gmail.com>', // MUST be a verified sender in Brevo
-        to: email, // list of receivers
-        subject: "Your OTP for login/register", // Subject line
-        text: `Your OTP is: ${otp}. It will expire in 10 minutes.`, // plain text body
-        html: `<b>Your OTP is: ${otp}</b><br>It will expire in 10 minutes.`, // html body
+        from: config.smtp.from,
+        to: email,
+        subject: "Your OTP for login/register",
+        text: `Your OTP is: ${otp}. It will expire in 10 minutes.`,
+        html: `<b>Your OTP is: ${otp}</b><br>It will expire in 10 minutes.`,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(info)
+    await transporter.sendMail(mailOptions);
 
-    res.status(200).json({ message: 'OTP sent to email successfully' });
-  } catch (error: any) {
-    console.error('Error in requestOtp controller', error.message);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
+    res.status(200).json({ status: 'success', message: 'OTP sent to email successfully' });
+});
 
-export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
-  try {
+export const verifyOtp = catchAsync(async (req: Request, res: Response): Promise<void> => {
     const { email, otp } = req.body;
 
     if (!email || !otp) {
-      res.status(400).json({ error: 'Please provide email and otp' });
-      return;
+      throw new AppError('Please provide email and otp', 400);
     }
 
     const user = await User.findOne({ email });
     
     if (!user || !user.otp || !user.otpExpiry) {
-      res.status(400).json({ error: 'Invalid or expired OTP' });
-      return;
+      throw new AppError('Invalid or expired OTP', 400);
     }
 
     if (user.otpExpiry < new Date()) {
-      res.status(400).json({ error: 'OTP has expired' });
-      return;
+      throw new AppError('OTP has expired', 400);
     }
 
     const isOtpCorrect = await bcrypt.compare(otp, user.otp);
 
     if (!isOtpCorrect) {
-      res.status(400).json({ error: 'Invalid OTP' });
-      return;
+      throw new AppError('Invalid OTP', 400);
     }
 
     // Clear OTP details upon successful verification
@@ -89,38 +78,27 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     generateTokenAndSetCookie(user._id.toString(), res);
 
     res.status(200).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      avatar: user.avatar,
-      status: user.status,
+      status: 'success',
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        status: user.status,
+      }
     });
-  } catch (error: any) {
-    console.error('Error in verifyOtp controller', error.message);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
+});
 
-export const logout = (req: Request, res: Response) => {
-  try {
+export const logout = catchAsync(async (req: Request, res: Response) => {
     res.cookie('jwt', '', { maxAge: 0 });
-    res.status(200).json({ message: 'Logged out successfully' });
-  } catch (error: any) {
-    console.error('Error in logout controller', error.message);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
+    res.status(200).json({ status: 'success', message: 'Logged out successfully' });
+});
 
-export const getMe = async (req: Request | any, res: Response): Promise<void> => {
-  try {
+export const getMe = catchAsync(async (req: Request | any, res: Response): Promise<void> => {
     const user = await User.findById(req.user._id).select('-password');
     if (!user) {
-      res.status(404).json({ error: 'User not found' });
-      return;
+      throw new AppError('User not found', 404);
     }
-    res.status(200).json(user);
-  } catch (error: any) {
-    console.error('Error in getMe controller', error.message);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
+    res.status(200).json({ status: 'success', data: user });
+});
+

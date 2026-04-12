@@ -3,36 +3,48 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 
 import config from './config/env.config.js';
+import { globalErrorHandler } from './utils/errors.js';
 
 const app = express();
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+// Security Headers
 app.use(helmet());
-app.use(morgan('dev'));
+
+// Development logging
+if (config.env === 'development') {
+    app.use(morgan('dev'));
+}
+
+// Rate Limiting (General)
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: 'Too many requests from this IP, please try again after 15 minutes'
+});
+app.use('/api', limiter);
+
+// Middleware
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
 
 // CORS
-const allowedOrigins = [config.cors.clientUrl, 'http://localhost:8080'];
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
+    origin: [config.cors.clientUrl, 'http://localhost:8080'],
     credentials: true
 }));
 
-// Basic route #
+// Basic route
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'API is running' });
+    res.status(200).json({ status: 'API is running', env: config.env });
 });
 
+// Routes
 import authRoutes from './modules/auth/auth.routes.js';
 import userRoutes from './modules/users/user.routes.js';
 import chatRoutes from './modules/chats/chat.routes.js';
@@ -49,4 +61,8 @@ app.use('/api/connections', connectionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/upload', uploadRoutes);
 
+// Global Error Handler
+app.use(globalErrorHandler);
+
 export default app;
+
