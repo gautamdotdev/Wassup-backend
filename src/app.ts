@@ -28,7 +28,7 @@ app.use(cors({
     credentials: true
 }));
 
-// Basic route
+// Basic route #
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'API is running' });
 });
