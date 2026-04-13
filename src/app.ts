@@ -10,8 +10,20 @@ import { globalErrorHandler } from './utils/errors.js';
 
 const app = express();
 
-// Security Headers
-app.use(helmet());
+// 1. Permissive CORS (Priority #1)
+app.use(cors({
+    origin: true, 
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'ngrok-skip-browser-warning'],
+    credentials: true
+}));
+
+// 2. Relaxed Security Headers
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false
+}));
+
 
 // Development logging
 if (config.env === 'development') {
@@ -33,11 +45,6 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 
-// CORS
-app.use(cors({
-    origin: true,
-    credentials: true
-}));
 
 
 

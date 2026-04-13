@@ -16,9 +16,10 @@ export const io = new Server(server, {
     origin: true,
 
 
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
   },
+
   transports: ['websocket', 'polling'],
   pingTimeout: 60000,
 });
