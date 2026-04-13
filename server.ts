@@ -90,10 +90,11 @@ io.on("connection", (socket) => {
 // Initialize server
 const startServer = async () => {
   try {
-    await connectDB();
-    await connectRedis();
+    // Run connections in parallel to speed up startup
+    await Promise.all([connectDB(), connectRedis()]);
 
     server.listen(config.port, "0.0.0.0", () => {
+
       console.log(`Server running on port ${config.port}`);
     });
   } catch (error) {
