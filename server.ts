@@ -76,6 +76,7 @@ io.on("connection", (socket) => {
       const senderId = newMessageRecieved.senderId._id
         ? newMessageRecieved.senderId._id.toString()
         : newMessageRecieved.senderId.toString();
+        
 
       if (participantId === senderId) return;
       io.to(participantId).emit("message recieved", newMessageRecieved);
