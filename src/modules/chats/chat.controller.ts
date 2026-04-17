@@ -62,15 +62,34 @@ export const accessChat = async (req: Request | any, res: Response): Promise<voi
 // Fetch all chats for the logged-in user
 export const fetchChats = async (req: Request | any, res: Response): Promise<void> => {
   try {
-    const chats = await Chat.find({ participants: { $elemMatch: { $eq: req.user._id } } })
+    const userId = req.user._id;
+
+    const chats = await Chat.find({ participants: { $elemMatch: { $eq: userId } } })
       .populate('participants', '-password')
-      .populate('latestMessage')
+      .populate({
+        path: 'latestMessage',
+        populate: { path: 'senderId', select: 'name avatar _id' }
+      })
       .populate('admin', '-password')
       .sort({ updatedAt: -1 });
 
-    res.status(200).json(chats);
+    // Attach unread count to each chat
+    const Message = (await import('../messages/message.model.js')).default;
+    const chatsWithUnread = await Promise.all(
+      chats.map(async (chat) => {
+        const unreadCount = await Message.countDocuments({
+          chatId: chat._id,
+          senderId: { $ne: userId },
+          readBy: { $ne: userId }
+        });
+        return { ...chat.toObject(), unreadCount };
+      })
+    );
+
+    res.status(200).json(chatsWithUnread);
   } catch (error: any) {
     console.error('Error fetching chats:', error.message);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+

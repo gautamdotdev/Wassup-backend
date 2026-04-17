@@ -44,12 +44,28 @@ console.log("Socket.io initialized and waiting for connections...");
 
 
 
+// Track socketId → userId mapping for online presence
+const onlineUsers = new Map<string, string>(); // socketId → userId
+
 // Socket Events
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
 
-  socket.on("setup", (userData) => {
-    socket.join(userData._id);
+  socket.on("setup", async (userData) => {
+    if (!userData?._id) return;
+    const userId = userData._id.toString();
+    socket.join(userId);
+    socket.data.userId = userId;
+    onlineUsers.set(socket.id, userId);
+
+    // Mark user online in DB
+    try {
+      const User = (await import("./src/modules/users/user.model.js")).default;
+      await User.findByIdAndUpdate(userId, { online: true, lastSeen: new Date() });
+    } catch (e) { /* swallow */ }
+
+    // Broadcast online presence to everyone
+    io.emit("user-online", userId);
     socket.emit("connected");
   });
 
@@ -77,15 +93,28 @@ io.on("connection", (socket) => {
       const senderId = newMessageRecieved.senderId._id
         ? newMessageRecieved.senderId._id.toString()
         : newMessageRecieved.senderId.toString();
-        
 
       if (participantId === senderId) return;
       io.to(participantId).emit("message recieved", newMessageRecieved);
     });
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
+    const userId = onlineUsers.get(socket.id);
+    onlineUsers.delete(socket.id);
     console.log("User disconnected:", socket.id);
+
+    if (userId) {
+      // Only mark offline if no other sockets remain for this user
+      const stillOnline = [...onlineUsers.values()].includes(userId);
+      if (!stillOnline) {
+        try {
+          const User = (await import("./src/modules/users/user.model.js")).default;
+          await User.findByIdAndUpdate(userId, { online: false, lastSeen: new Date() });
+        } catch (e) { /* swallow */ }
+        io.emit("user-offline", userId);
+      }
+    }
   });
 });
 

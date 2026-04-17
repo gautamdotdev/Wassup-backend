@@ -10,6 +10,8 @@ import { globalErrorHandler } from './utils/errors.js';
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 // 1. Permissive CORS (Priority #1)
 app.use(cors({
     origin: true, 
@@ -33,7 +35,7 @@ if (config.env === 'development') {
 // Rate Limiting (General)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+    limit: 300, // Limit each IP to 300 requests per `window` (here, per 15 minutes)
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: 'Too many requests from this IP, please try again after 15 minutes'
