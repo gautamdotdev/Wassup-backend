@@ -4,7 +4,7 @@ import Chat from '../chats/chat.model.js';
 import { io } from '../../../server.js';
 
 export const sendMessage = async (req: Request | any, res: Response): Promise<void> => {
-  const { content, chatId, mediaUrl, mediaType } = req.body;
+  const { content, chatId, mediaUrl, mediaType, replyTo } = req.body;
 
   if (!chatId || (!content && !mediaUrl)) {
     res.status(400).json({ error: 'Invalid data passed into request' });
@@ -17,7 +17,8 @@ export const sendMessage = async (req: Request | any, res: Response): Promise<vo
     chatId: chatId,
     mediaUrl: mediaUrl,
     mediaType: mediaType,
-    readBy: [req.user._id]
+    readBy: [req.user._id],
+    ...(replyTo ? { replyTo } : {}),   // persist the replied-to message ID
   };
 
   try {
@@ -45,6 +46,7 @@ export const fetchMessages = async (req: Request | any, res: Response): Promise<
     const messages = await Message.find({ chatId: req.params.chatId })
       .populate('senderId', 'name avatar email')
       .populate('chatId')
+      .populate('replyTo', 'text senderId')   // populate quoted message text + sender
       .sort({ createdAt: 1 });
 
     res.status(200).json(messages);
