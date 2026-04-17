@@ -218,3 +218,58 @@ export const deliverPendingMessages = async (recipientId: string): Promise<void>
     console.error('deliverPendingMessages error:', err);
   }
 };
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/**
+ * POST /messages/:id/react
+ * Body: { emoji: string }
+ *
+ * Toggles a user's reaction on a message (add if absent, remove if present).
+ * Broadcasts 'reaction updated' to the entire chat room for real-time UI.
+ */
+export const toggleReaction = async (req: Request | any, res: Response): Promise<void> => {
+  const { id: messageId } = req.params;
+  const { emoji } = req.body;
+  const userId = req.user._id.toString();
+
+  if (!emoji) {
+    res.status(400).json({ error: 'emoji is required' });
+    return;
+  }
+
+  try {
+    const message = await Message.findById(messageId);
+    if (!message) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
+
+    const alreadyReacted = message.reactions.some(
+      (r: any) => r.user.toString() === userId && r.emoji === emoji
+    );
+
+    if (alreadyReacted) {
+      await Message.findByIdAndUpdate(messageId, {
+        $pull: { reactions: { user: req.user._id, emoji } },
+      });
+    } else {
+      await Message.findByIdAndUpdate(messageId, {
+        $push: { reactions: { user: req.user._id, emoji } },
+      });
+    }
+
+    const updated = await Message.findById(messageId).select('reactions chatId');
+    const reactions = updated?.reactions ?? [];
+
+    // Broadcast to every participant in this chat room
+    io.to(message.chatId.toString()).emit('reaction updated', {
+      messageId: messageId.toString(),
+      reactions,
+    });
+
+    res.status(200).json({ reactions });
+  } catch (err: any) {
+    console.error('toggleReaction error:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};

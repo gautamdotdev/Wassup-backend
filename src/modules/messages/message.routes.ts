@@ -1,13 +1,13 @@
 import express from 'express';
-import { sendMessage, fetchMessages, markMessagesRead } from './message.controller.js';
+import { sendMessage, fetchMessages, markMessagesRead, toggleReaction } from './message.controller.js';
 import { protectRoute } from '../../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-// NOTE: /read/:chatId MUST come before /:chatId to prevent Express
-// from treating the literal "read" as a chatId parameter.
+// NOTE: specific paths must come before wildcard /:chatId
 router.post('/',               protectRoute, sendMessage);
 router.post('/read/:chatId',   protectRoute, markMessagesRead);
+router.post('/:id/react',      protectRoute, toggleReaction);
 router.get('/:chatId',         protectRoute, fetchMessages);
 
 export default router;
