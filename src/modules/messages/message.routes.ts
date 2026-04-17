@@ -4,8 +4,10 @@ import { protectRoute } from '../../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-router.post('/', protectRoute, sendMessage);
-router.get('/:chatId', protectRoute, fetchMessages);
-router.post('/read/:chatId', protectRoute, markMessagesRead);
+// NOTE: /read/:chatId MUST come before /:chatId to prevent Express
+// from treating the literal "read" as a chatId parameter.
+router.post('/',               protectRoute, sendMessage);
+router.post('/read/:chatId',   protectRoute, markMessagesRead);
+router.get('/:chatId',         protectRoute, fetchMessages);
 
 export default router;
