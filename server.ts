@@ -64,6 +64,14 @@ io.on("connection", (socket) => {
       await User.findByIdAndUpdate(userId, { online: true, lastSeen: new Date() });
     } catch (e) { /* swallow */ }
 
+    // Deliver all messages that were sent while this user was offline.
+    // This upgrades the sender's "sent" (1 tick) → "delivered" (2 ticks grey).
+    try {
+      const { deliverPendingMessages } = await import("./src/modules/messages/message.controller.js");
+      // Run async, don't block the setup response
+      deliverPendingMessages(userId).catch(() => {});
+    } catch (e) { /* swallow */ }
+
     // Broadcast online presence to everyone
     io.emit("user-online", userId);
     socket.emit("connected");
@@ -77,26 +85,38 @@ io.on("connection", (socket) => {
   socket.on("typing", (room) => socket.in(room).emit("typing"));
   socket.on("stop typing", (room) => socket.in(room).emit("stop typing"));
 
-  socket.on("new message", (newMessageRecieved) => {
+  socket.on("new message", async (newMessageRecieved) => {
     const chat = newMessageRecieved.chatId;
 
     if (!chat || !chat.participants)
       return console.log("chat.participants not defined");
 
-    // Emit to the entire chat room
     const chatId = chat._id ? chat._id.toString() : chat.toString();
-    io.to(chatId).emit("message recieved", newMessageRecieved);
+    const messageId = newMessageRecieved._id?.toString();
+    const senderId = newMessageRecieved.senderId?._id
+      ? newMessageRecieved.senderId._id.toString()
+      : newMessageRecieved.senderId?.toString();
 
-    // Also emit to each participant's individual room for notifications
-    chat.participants.forEach((user: any) => {
-      const participantId = user._id ? user._id.toString() : user.toString();
-      const senderId = newMessageRecieved.senderId._id
-        ? newMessageRecieved.senderId._id.toString()
-        : newMessageRecieved.senderId.toString();
+    // Deliver to each participant (except the sender)
+    for (const user of chat.participants) {
+      const recipientId = user._id ? user._id.toString() : user.toString();
+      if (recipientId === senderId) continue;
 
-      if (participantId === senderId) return;
-      io.to(participantId).emit("message recieved", newMessageRecieved);
-    });
+      // Check if this recipient is currently online (has an active socket)
+      const recipientOnline = [...onlineUsers.values()].includes(recipientId);
+
+      // Emit message to recipient's personal room + the shared chat room
+      io.to(recipientId).emit("message recieved", newMessageRecieved);
+      io.to(chatId).emit("message recieved", newMessageRecieved);
+
+      // If recipient is online → mark as delivered + notify sender
+      if (recipientOnline && messageId) {
+        try {
+          const { markMessageDelivered } = await import("./src/modules/messages/message.controller.js");
+          await markMessageDelivered(messageId, recipientId);
+        } catch (e) { /* swallow */ }
+      }
+    }
   });
 
   socket.on("disconnect", async () => {
