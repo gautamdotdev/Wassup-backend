@@ -15,7 +15,7 @@ app.set("trust proxy", 1);
 // 1. Permissive CORS (Priority #1)
 app.use(
   cors({
-    origin: ["https://wassup-f.vercel.app", "http://localhost:5173"],
+    origin: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
