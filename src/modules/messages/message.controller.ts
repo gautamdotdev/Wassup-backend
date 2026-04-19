@@ -63,14 +63,22 @@ export const sendMessage = async (req: Request | any, res: Response): Promise<vo
 /* ─────────────────────────────────────────────────────────────────────────── */
 export const fetchMessages = async (req: Request | any, res: Response): Promise<void> => {
   try {
-    const messages = await Message.find({ chatId: req.params.chatId })
+    const uid = req.user._id.toString();
+
+    // Respect per-user clear time
+    const chat = await Chat.findById(req.params.chatId).select('clearedAt');
+    const clearEntry = chat?.clearedAt?.find((c: any) => c.user.toString() === uid);
+    const clearedAt = clearEntry?.at ?? null;
+
+    const query: any = { chatId: req.params.chatId };
+    if (clearedAt) query.createdAt = { $gt: clearedAt };
+
+    const messages = await Message.find(query)
       .populate('senderId', 'name avatar email')
       .populate('chatId')
       .populate('replyTo', 'text senderId')
       .sort({ createdAt: 1 });
 
-    // Attach a computed `tickStatus` to each message so the client can
-    // decide which tick icon to show without extra logic.
     const withStatus = messages.map((m: any) => {
       const senderId = (m.senderId?._id || m.senderId)?.toString();
       const obj = m.toObject();
@@ -82,6 +90,54 @@ export const fetchMessages = async (req: Request | any, res: Response): Promise<
   } catch (error: any) {
     console.error('Error fetching messages:', error.message);
     res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/**
+ * GET /messages/:chatId/search?q=keyword
+ * Returns messages whose text matches the keyword (case-insensitive).
+ */
+export const searchMessages = async (req: Request | any, res: Response): Promise<void> => {
+  const { chatId } = req.params;
+  const q = (req.query.q as string || '').trim();
+
+  if (!q) { res.status(200).json([]); return; }
+
+  try {
+    const messages = await Message.find({
+      chatId,
+      text: { $regex: q, $options: 'i' }
+    })
+      .populate('senderId', 'name avatar')
+      .sort({ createdAt: 1 })
+      .lean();
+
+    res.status(200).json(messages);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/**
+ * DELETE /messages/:id
+ * Deletes a single message if the requester is the sender.
+ */
+export const deleteMessage = async (req: Request | any, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const uid = req.user._id.toString();
+
+  try {
+    const msg = await Message.findById(id);
+    if (!msg) { res.status(404).json({ error: 'Message not found' }); return; }
+    if (msg.senderId.toString() !== uid) {
+      res.status(403).json({ error: 'Not your message' }); return;
+    }
+    await msg.deleteOne();
+    res.status(200).json({ deleted: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -162,22 +218,13 @@ export const markMessageDelivered = async (messageId: string, recipientId: strin
 /* ─────────────────────────────────────────────────────────────────────────── */
 /**
  * deliverPendingMessages — called when a user comes back online (setup event).
- *
- * Finds every message that:
- *   - was NOT sent by this user
- *   - has NOT been delivered to this user yet
- *   - has NOT been read by this user yet  (if already read, seen > delivered)
- *
- * Bulk-marks them as delivered, then groups by (senderId, chatId) and emits
- * one "messages delivered" { chatId, messageIds } event per group to each sender.
  */
 export const deliverPendingMessages = async (recipientId: string): Promise<void> => {
   try {
-    // Only fetch fields we need — lean() for speed
     const pending = await Message.find({
       senderId:    { $ne: recipientId },
       deliveredTo: { $ne: recipientId },
-      readBy:      { $ne: recipientId }, // already-read msgs don't need delivery update
+      readBy:      { $ne: recipientId },
     })
       .select('_id chatId senderId')
       .lean();
@@ -186,15 +233,12 @@ export const deliverPendingMessages = async (recipientId: string): Promise<void>
 
     const messageIds = pending.map((m: any) => m._id);
 
-    // Bulk update in one DB write
     await Message.updateMany(
       { _id: { $in: messageIds } },
       { $addToSet: { deliveredTo: recipientId } }
     );
 
-    // Group by senderId → chatId so we emit minimal socket events
     const grouped = new Map<string, Map<string, string[]>>();
-    // grouped: senderId → chatId → [messageId, ...]
 
     for (const m of pending as any[]) {
       const senderId = m.senderId.toString();
@@ -208,7 +252,6 @@ export const deliverPendingMessages = async (recipientId: string): Promise<void>
       byChat.get(chatId)!.push(msgId);
     }
 
-    // Emit one event per (sender, chat) pair
     for (const [senderId, byChat] of grouped) {
       for (const [chatId, msgIds] of byChat) {
         io.to(senderId).emit('messages delivered', { chatId, messageIds: msgIds });
