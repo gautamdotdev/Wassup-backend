@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Message from './message.model.js';
 import Chat from '../chats/chat.model.js';
 import { io } from '../../../server.js';
+import admin from "../../config/firebaseAdmin.js";
 
 /**
  * Derive the tick status for a sent message based on DB fields.
@@ -20,6 +21,26 @@ function deriveStatus(m: any, senderId: string): 'sent' | 'delivered' | 'seen' {
 
   return 'sent';
 }
+
+const sendPushNotification = async (fcmToken: string, text: string, senderName: string, chatId: string) => {
+  if (!fcmToken || !admin) return;
+
+  try {
+    await admin.messaging().send({
+      token: fcmToken,
+      notification: {
+        title: senderName,
+        body: text || "Sent a media message",
+      },
+      data: {
+        chatId: chatId.toString(),
+        click_action: "FLUTTER_NOTIFICATION_CLICK", // for mobile if needed
+      }
+    });
+  } catch (error) {
+    console.error("Error sending push notification:", error);
+  }
+};
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 export const sendMessage = async (req: Request | any, res: Response): Promise<void> => {
@@ -52,6 +73,24 @@ export const sendMessage = async (req: Request | any, res: Response): Promise<vo
     }
 
     await Chat.findByIdAndUpdate(chatId, { latestMessage: message._id });
+
+    // Send Push Notifications to other participants
+    const chat = message.chatId as any;
+    const senderName = (message.senderId as any).name;
+    const User = (await import('../users/user.model.js')).default;
+
+    if (chat && chat.participants) {
+      chat.participants.forEach(async (participant: any) => {
+        const pId = participant._id.toString();
+        if (pId !== req.user._id.toString()) {
+          // Fetch full user to get fcmToken
+          const receiver = await User.findById(pId).select('fcmToken');
+          if (receiver?.fcmToken) {
+            sendPushNotification(receiver.fcmToken, content, senderName, chatId);
+          }
+        }
+      });
+    }
 
     res.status(200).json(message);
   } catch (error: any) {

@@ -10,6 +10,7 @@ export interface IUser extends Document {
   online: boolean;
   otp?: string;
   otpExpiry?: Date;
+  fcmToken?: string;
 }
 
 const UserSchema: Schema = new Schema({
@@ -21,7 +22,8 @@ const UserSchema: Schema = new Schema({
   lastSeen: { type: Date, default: Date.now },
   online: { type: Boolean, default: false },
   otp: { type: String },
-  otpExpiry: { type: Date }
+  otpExpiry: { type: Date },
+  fcmToken: { type: String }
 }, {
   timestamps: true
 });

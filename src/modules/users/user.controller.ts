@@ -30,3 +30,23 @@ export const getUser = async (req: Request | any, res: Response): Promise<void> 
     res.status(500).json({ error: err.message });
   }
 };
+
+/**
+ * POST /users/save-fcm-token
+ * Save user's FCM token for push notifications.
+ */
+export const saveFcmToken = async (req: Request | any, res: Response): Promise<void> => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      res.status(400).json({ error: 'Token is required' });
+      return;
+    }
+
+    await User.findByIdAndUpdate(req.user._id, { fcmToken: token });
+    res.status(200).json({ success: true });
+  } catch (err: any) {
+    console.error('Error saving FCM token:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};

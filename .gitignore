@@ -25,3 +25,4 @@ dist-ssr
 credentials.json
 .env
 .env.local
+serviceAccountKey.json

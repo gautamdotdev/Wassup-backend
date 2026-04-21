@@ -30,6 +30,8 @@ const envSchema = z.object({
   SMTP_USER: z.string().email(),
   SMTP_PASS: z.string().min(1),
   EMAIL_FROM: z.string().default('Wassup App <noreply@wassup.app>'),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_MESSAGING_SENDER_ID: z.string().optional(),
 });
 
 
@@ -78,6 +80,11 @@ const config = {
         user: env.SMTP_USER,
         pass: env.SMTP_PASS,
         from: env.EMAIL_FROM,
+    },
+
+    firebase: {
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
     }
 };
 
