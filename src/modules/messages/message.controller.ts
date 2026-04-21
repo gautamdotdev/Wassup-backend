@@ -182,11 +182,19 @@ export const markMessagesRead = async (req: Request | any, res: Response): Promi
       });
 
     if (chat) {
+      // Fetch current user details to include in broadcast
+      const User = (await import('../users/user.model.js')).default;
+      const readByUser = await User.findById(userId).select('name avatar _id');
+
       // In both DM and Group, notify all participants that this user read messages
       chat.participants.forEach((p: any) => {
         const pId = p._id.toString();
         if (pId !== userId.toString()) {
-          io.to(pId).emit('messages read', { chatId, readBy: userId });
+          io.to(pId).emit('messages read', { 
+            chatId, 
+            readBy: userId,
+            user: readByUser 
+          });
         }
       });
     }
