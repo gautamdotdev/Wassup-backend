@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import Chat from './chat.model.js';
 import User from '../users/user.model.js';
 import Connection from '../connections/connection.model.js';
+import { io } from '../../../server.js';
 
 /* ─── helpers ─── */
 function userId(req: any): string { return req.user._id.toString(); }
@@ -32,7 +33,7 @@ export const accessChat = async (req: Request | any, res: Response): Promise<voi
 
     // Check if chat already exists
     let isChat = await Chat.findOne({
-      isGroupChat: false,
+      chatType: 'direct',
       $and: [
         { participants: { $elemMatch: { $eq: req.user._id } } },
         { participants: { $elemMatch: { $eq: targetId } } }
@@ -48,7 +49,7 @@ export const accessChat = async (req: Request | any, res: Response): Promise<voi
 
     const createdChat = await Chat.create({
       chatName: 'sender',
-      isGroupChat: false,
+      chatType: 'direct',
       participants: [req.user._id, targetId]
     });
     const fullChat = await Chat.findOne({ _id: createdChat._id }).populate('participants', '-password');
@@ -71,7 +72,8 @@ export const fetchChats = async (req: Request | any, res: Response): Promise<voi
         path: 'latestMessage',
         populate: { path: 'senderId', select: 'name avatar _id' }
       })
-      .populate('admin', '-password')
+      .populate('admins', '-password')
+      .populate('createdBy', '-password')
       .sort({ updatedAt: -1 });
 
     const Message = (await import('../messages/message.model.js')).default;
@@ -198,6 +200,290 @@ export const verifyChatLock = async (req: Request | any, res: Response): Promise
     res.status(200).json({ verified: ok });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── CREATE GROUP CHAT ───
+export const createGroup = async (req: Request | any, res: Response): Promise<void> => {
+  const { participants, name, description, avatar } = req.body;
+
+  if (!participants || !name) {
+    res.status(400).json({ error: 'Please fill all the fields' });
+    return;
+  }
+
+  const users = JSON.parse(participants);
+  if (users.length < 2) {
+    res.status(400).json({ error: 'More than 2 users are required to form a group chat' });
+    return;
+  }
+
+  // Current user is always a participant and admin/creator
+  users.push(req.user);
+
+  try {
+    const groupChat = await Chat.create({
+      chatName: name,
+      participants: users,
+      chatType: 'group',
+      admins: [req.user._id],
+      createdBy: req.user._id,
+      description: description || '',
+      avatar: avatar || '',
+      groupSettings: {
+        canSendMessage: 'all',
+        canAddMembers: 'all'
+      }
+    });
+
+    const fullGroupChat = await Chat.findOne({ _id: groupChat._id })
+      .populate('participants', '-password')
+      .populate('admins', '-password')
+      .populate('createdBy', '-password');
+
+    // Notify all participants about the new group
+    fullGroupChat?.participants.forEach((p: any) => {
+      io.to(p._id.toString()).emit('group-created', fullGroupChat);
+    });
+
+    res.status(200).json(fullGroupChat);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// ─── RENAME / UPDATE GROUP ───
+export const updateGroup = async (req: Request | any, res: Response): Promise<void> => {
+  const { chatId, chatName, description, avatar } = req.body;
+
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+       res.status(404).json({ error: 'Chat Not Found' });
+       return;
+    }
+
+    // Only admins can update group info
+    const isAdmin = chat.admins.some(a => a.toString() === req.user._id.toString());
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Only admins can update group info' });
+      return;
+    }
+
+    const updatedChat = await Chat.findByIdAndUpdate(
+      chatId,
+      { chatName, description, avatar },
+      { new: true }
+    )
+      .populate('participants', '-password')
+      .populate('admins', '-password')
+      .populate('createdBy', '-password');
+
+    // Notify all participants
+    io.to(chatId.toString()).emit('group-updated', updatedChat);
+    updatedChat?.participants.forEach((p: any) => {
+      io.to(p._id.toString()).emit('group-updated', updatedChat);
+    });
+
+    res.status(200).json(updatedChat);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// ─── ADD TO GROUP ───
+export const addToGroup = async (req: Request | any, res: Response): Promise<void> => {
+  const { chatId, userId } = req.body;
+
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      res.status(404).json({ error: 'Chat Not Found' });
+      return;
+    }
+
+    // Check settings: who can add members
+    const isAdmin = chat.admins.some(a => a.toString() === req.user._id.toString());
+    if (chat.groupSettings.canAddMembers === 'admins' && !isAdmin) {
+      res.status(403).json({ error: 'Only admins can add members to this group' });
+      return;
+    }
+
+    const added = await Chat.findByIdAndUpdate(
+      chatId,
+      { $addToSet: { participants: userId } },
+      { new: true }
+    )
+      .populate('participants', '-password')
+      .populate('admins', '-password')
+      .populate('createdBy', '-password');
+
+    // Notify all participants
+    io.to(chatId.toString()).emit('member-added', { chatId, userId, chat: added });
+    added?.participants.forEach((p: any) => {
+       io.to(p._id.toString()).emit('member-added', { chatId, userId, chat: added });
+    });
+
+    res.status(200).json(added);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// ─── REMOVE FROM GROUP ───
+export const removeFromGroup = async (req: Request | any, res: Response): Promise<void> => {
+  const { chatId, userId } = req.body;
+
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      res.status(404).json({ error: 'Chat Not Found' });
+      return;
+    }
+
+    // Only admins can remove members
+    const isAdmin = chat.admins.some(a => a.toString() === req.user._id.toString());
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Only admins can remove members' });
+      return;
+    }
+
+    // Cannot remove the creator
+    if (chat.createdBy.toString() === userId) {
+      res.status(400).json({ error: 'Cannot remove the group creator' });
+      return;
+    }
+
+    const removed = await Chat.findByIdAndUpdate(
+      chatId,
+      { 
+        $pull: { 
+          participants: userId,
+          admins: userId
+        } 
+      },
+      { new: true }
+    )
+      .populate('participants', '-password')
+      .populate('admins', '-password')
+      .populate('createdBy', '-password');
+
+    // Notify all participants including the removed one
+    io.to(chatId.toString()).emit('member-removed', { chatId, userId });
+    io.to(userId.toString()).emit('member-removed', { chatId, userId });
+    removed?.participants.forEach((p: any) => {
+       io.to(p._id.toString()).emit('member-removed', { chatId, userId });
+    });
+
+    res.status(200).json(removed);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// ─── LEAVE GROUP ───
+export const leaveGroup = async (req: Request | any, res: Response): Promise<void> => {
+  const { chatId } = req.body;
+  const uid = req.user._id;
+
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      res.status(404).json({ error: 'Chat Not Found' });
+      return;
+    }
+
+    // Creator cannot leave (they must delete)
+    if (chat.createdBy.toString() === uid.toString()) {
+      res.status(400).json({ error: 'Creator cannot leave. Please delete the group instead.' });
+      return;
+    }
+
+    const updated = await Chat.findByIdAndUpdate(
+      chatId,
+      { 
+        $pull: { 
+          participants: uid,
+          admins: uid
+        } 
+      },
+      { new: true }
+    );
+
+    // Notify others
+    io.to(chatId.toString()).emit('user-left', { chatId, userId: uid });
+    chat.participants.forEach((p: any) => {
+      io.to(p._id.toString()).emit('user-left', { chatId, userId: uid });
+    });
+
+    res.status(200).json({ left: true });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// ─── DELETE GROUP ───
+export const deleteGroup = async (req: Request | any, res: Response): Promise<void> => {
+  const { chatId } = req.params;
+
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      res.status(404).json({ error: 'Chat Not Found' });
+      return;
+    }
+
+    // Only creator can delete
+    if (chat.createdBy.toString() !== req.user._id.toString()) {
+      res.status(403).json({ error: 'Only the group creator can delete this group' });
+      return;
+    }
+
+    await Chat.findByIdAndDelete(chatId);
+    // Also delete all messages in this chat
+    const Message = (await import('../messages/message.model.js')).default;
+    await Message.deleteMany({ chatId });
+
+    // Notify all participants
+    chat.participants.forEach((p: any) => {
+      io.to(p._id.toString()).emit('group-deleted', chatId);
+    });
+
+    res.status(200).json({ deleted: true });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+// ─── UPDATE GROUP SETTINGS ───
+export const updateGroupSettings = async (req: Request | any, res: Response): Promise<void> => {
+  const { chatId, canSendMessage, canAddMembers } = req.body;
+
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      res.status(404).json({ error: 'Chat Not Found' });
+      return;
+    }
+
+    // Only creator can update fundamental settings
+    if (chat.createdBy.toString() !== req.user._id.toString()) {
+      res.status(403).json({ error: 'Only the group creator can update these settings' });
+      return;
+    }
+
+    const updatedChat = await Chat.findByIdAndUpdate(
+      chatId,
+      { 
+        'groupSettings.canSendMessage': canSendMessage,
+        'groupSettings.canAddMembers': canAddMembers
+      },
+      { new: true }
+    );
+
+    res.status(200).json(updatedChat);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
   }
 };
 

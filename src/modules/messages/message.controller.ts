@@ -77,6 +77,7 @@ export const fetchMessages = async (req: Request | any, res: Response): Promise<
       .populate('senderId', 'name avatar email')
       .populate('chatId')
       .populate('replyTo', 'text senderId')
+      .populate('readBy', 'name avatar _id')
       .sort({ createdAt: 1 });
 
     const withStatus = messages.map((m: any) => {
@@ -129,12 +130,24 @@ export const deleteMessage = async (req: Request | any, res: Response): Promise<
   const uid = req.user._id.toString();
 
   try {
-    const msg = await Message.findById(id);
+    const msg = await Message.findById(id).populate('chatId');
     if (!msg) { res.status(404).json({ error: 'Message not found' }); return; }
-    if (msg.senderId.toString() !== uid) {
-      res.status(403).json({ error: 'Not your message' }); return;
+    
+    const chat = msg.chatId as any;
+    const isAdmin = chat.admins?.some((a: any) => a.toString() === uid);
+    const isSender = msg.senderId.toString() === uid;
+
+    if (!isSender && !isAdmin) {
+      res.status(403).json({ error: 'Not authorized to delete this message' }); 
+      return; 
     }
+    
+    const chatId = chat._id.toString();
     await msg.deleteOne();
+    
+    // Broadcast deletion to all members in the chat room
+    io.to(chatId).emit('message deleted', { messageId: id, chatId });
+    
     res.status(200).json({ deleted: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -169,13 +182,13 @@ export const markMessagesRead = async (req: Request | any, res: Response): Promi
       });
 
     if (chat) {
-      const senderId = chat.participants
-        .find((p: any) => p._id.toString() !== userId.toString())
-        ?._id?.toString();
-
-      if (senderId) {
-        io.to(senderId).emit('messages read', { chatId, readBy: userId });
-      }
+      // In both DM and Group, notify all participants that this user read messages
+      chat.participants.forEach((p: any) => {
+        const pId = p._id.toString();
+        if (pId !== userId.toString()) {
+          io.to(pId).emit('messages read', { chatId, readBy: userId });
+        }
+      });
     }
 
     res.status(200).json({ status: 'success' });

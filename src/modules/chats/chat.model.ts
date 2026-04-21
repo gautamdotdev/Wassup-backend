@@ -2,11 +2,14 @@ import mongoose, { Schema, Document } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 export interface IChat extends Document {
-  isGroupChat: boolean;
+  chatType: 'direct' | 'group';
   chatName?: string;
+  description?: string;
+  avatar?: string;
   participants: mongoose.Types.ObjectId[];
   latestMessage?: mongoose.Types.ObjectId;
-  admin?: mongoose.Types.ObjectId;
+  admins: mongoose.Types.ObjectId[];
+  createdBy: mongoose.Types.ObjectId;
   // Mute
   mutedBy: mongoose.Types.ObjectId[];
   // Block
@@ -17,21 +20,33 @@ export interface IChat extends Document {
   theme?: string;
   // Lock – per-user lock password hash
   locks: Array<{ user: mongoose.Types.ObjectId; passwordHash: string }>;
+  // Settings
+  groupSettings: {
+    canSendMessage: 'all' | 'admins';
+    canAddMembers: 'all' | 'admins';
+  };
   // Verify lock password helper
   verifyLockPassword(userId: string, plain: string): Promise<boolean>;
 }
 
 const ChatSchema: Schema = new Schema({
-  isGroupChat:    { type: Boolean, default: false },
+  chatType:       { type: String, enum: ['direct', 'group'], default: 'direct' },
   chatName:       { type: String },
+  description:    { type: String },
+  avatar:         { type: String },
   participants:   [{ type: Schema.Types.ObjectId, ref: 'User' }],
   latestMessage:  { type: Schema.Types.ObjectId, ref: 'Message' },
-  admin:          { type: Schema.Types.ObjectId, ref: 'User' },
+  admins:         [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  createdBy:      { type: Schema.Types.ObjectId, ref: 'User' },
   mutedBy:        [{ type: Schema.Types.ObjectId, ref: 'User' }],
   blockedBy:      { type: Schema.Types.ObjectId, ref: 'User' },
   clearedAt:      [{ user: { type: Schema.Types.ObjectId, ref: 'User' }, at: { type: Date } }],
   theme:          { type: String, default: 'default' },
   locks:          [{ user: { type: Schema.Types.ObjectId, ref: 'User' }, passwordHash: { type: String } }],
+  groupSettings: {
+    canSendMessage: { type: String, enum: ['all', 'admins'], default: 'all' },
+    canAddMembers:  { type: String, enum: ['all', 'admins'], default: 'all' },
+  },
 }, {
   timestamps: true
 });
