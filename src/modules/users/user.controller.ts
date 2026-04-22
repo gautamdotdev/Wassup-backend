@@ -46,7 +46,27 @@ export const saveFcmToken = async (req: Request | any, res: Response): Promise<v
     await User.findByIdAndUpdate(req.user._id, { fcmToken: token });
     res.status(200).json({ success: true });
   } catch (err: any) {
-    console.error('Error saving FCM token:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * PATCH /users/settings
+ * Update user settings (e.g. push notifications)
+ */
+export const updateSettings = async (req: Request | any, res: Response): Promise<void> => {
+  try {
+    const { pushNotificationsEnabled } = req.body;
+    
+    const user = await User.findByIdAndUpdate(
+      req.user._id, 
+      { pushNotificationsEnabled },
+      { new: true }
+    ).select('-password');
+    
+    res.status(200).json(user);
+  } catch (err: any) {
+    console.error('Error updating settings:', err.message);
     res.status(500).json({ error: err.message });
   }
 };

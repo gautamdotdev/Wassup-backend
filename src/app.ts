@@ -23,6 +23,7 @@ app.use(
       "X-Requested-With",
       "Accept",
       "ngrok-skip-browser-warning",
+      "Authorization"
     ],
     credentials: true,
   }),
@@ -43,8 +44,8 @@ if (config.env === "development") {
 
 // Rate Limiting (General)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 300, // Limit each IP to 300 requests per `window` (here, per 15 minutes)
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: "Too many requests from this IP, please try again after 15 minutes",
@@ -58,7 +59,7 @@ app.use(cookieParser());
 
 // Basic route
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "API is running", env: config.env });
+  res.status(200).json({ status: "API is running", env: config.env, test: "Route check" });
 });
 
 // Routes

@@ -11,6 +11,7 @@ export interface IUser extends Document {
   otp?: string;
   otpExpiry?: Date;
   fcmToken?: string;
+  pushNotificationsEnabled: boolean;
 }
 
 const UserSchema: Schema = new Schema({
@@ -23,7 +24,8 @@ const UserSchema: Schema = new Schema({
   online: { type: Boolean, default: false },
   otp: { type: String },
   otpExpiry: { type: Date },
-  fcmToken: { type: String }
+  fcmToken: { type: String },
+  pushNotificationsEnabled: { type: Boolean, default: true }
 }, {
   timestamps: true
 });

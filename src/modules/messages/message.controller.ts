@@ -83,9 +83,9 @@ export const sendMessage = async (req: Request | any, res: Response): Promise<vo
       chat.participants.forEach(async (participant: any) => {
         const pId = participant._id.toString();
         if (pId !== req.user._id.toString()) {
-          // Fetch full user to get fcmToken
-          const receiver = await User.findById(pId).select('fcmToken');
-          if (receiver?.fcmToken) {
+          // Fetch full user to get fcmToken and settings
+          const receiver = await User.findById(pId).select('fcmToken pushNotificationsEnabled');
+          if (receiver?.fcmToken && receiver?.pushNotificationsEnabled !== false) {
             sendPushNotification(receiver.fcmToken, content, senderName, chatId);
           }
         }
