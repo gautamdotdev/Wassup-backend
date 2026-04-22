@@ -22,7 +22,7 @@ function deriveStatus(m: any, senderId: string): 'sent' | 'delivered' | 'seen' {
   return 'sent';
 }
 
-const sendPushNotification = async (fcmToken: string, text: string, senderName: string, chatId: string) => {
+const sendPushNotification = async (fcmToken: string, text: string, senderName: string, chatId: string, senderAvatar?: string, senderId?: string) => {
   if (!fcmToken || !admin) return;
 
   try {
@@ -31,10 +31,12 @@ const sendPushNotification = async (fcmToken: string, text: string, senderName: 
       notification: {
         title: senderName,
         body: text || "Sent a media message",
+        imageUrl: senderAvatar,
       },
       data: {
         chatId: chatId.toString(),
-        click_action: "FLUTTER_NOTIFICATION_CLICK", // for mobile if needed
+        senderId: senderId?.toString() || "",
+        click_action: "FLUTTER_NOTIFICATION_CLICK", 
       }
     });
   } catch (error) {
@@ -86,7 +88,9 @@ export const sendMessage = async (req: Request | any, res: Response): Promise<vo
           // Fetch full user to get fcmToken and settings
           const receiver = await User.findById(pId).select('fcmToken pushNotificationsEnabled');
           if (receiver?.fcmToken && receiver?.pushNotificationsEnabled !== false) {
-            sendPushNotification(receiver.fcmToken, content, senderName, chatId);
+            const senderAvatar = (message.senderId as any).avatar;
+            const senderId = (message.senderId as any)._id;
+            sendPushNotification(receiver.fcmToken, content, senderName, chatId, senderAvatar, senderId);
           }
         }
       });
