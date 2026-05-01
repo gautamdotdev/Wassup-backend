@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import Chat from './chat.model.js';
 import User from '../users/user.model.js';
 import Connection from '../connections/connection.model.js';
+import Message from '../messages/message.model.js';
 import { io } from '../../../server.js';
 
 /* ─── helpers ─── */
@@ -154,7 +155,20 @@ export const setChatTheme = async (req: Request | any, res: Response): Promise<v
 
   try {
     const chat = await Chat.findByIdAndUpdate(chatId, { theme }, { new: true });
-    res.status(200).json({ theme: chat?.theme });
+    
+    // Create system message for theme update
+    const systemMsg = await Message.create({
+      chatId,
+      senderId: req.user._id,
+      text: `${req.user.name} changed the chat theme`,
+      isSystem: true,
+      readBy: [req.user._id],
+    });
+
+    // Notify all participants
+    io.to(chatId.toString()).emit('theme-updated', { chatId, theme, systemMsg });
+
+    res.status(200).json({ theme: chat?.theme, systemMsg });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -241,6 +255,15 @@ export const createGroup = async (req: Request | any, res: Response): Promise<vo
       .populate('admins', '-password')
       .populate('createdBy', '-password');
 
+    // Create system message for group creation
+    await Message.create({
+      chatId: groupChat._id,
+      senderId: req.user._id,
+      text: `${req.user.name} created the group "${name}"`,
+      isSystem: true,
+      readBy: [req.user._id],
+    });
+
     // Notify all participants about the new group
     fullGroupChat?.participants.forEach((p: any) => {
       io.to(p._id.toString()).emit('group-created', fullGroupChat);
@@ -318,10 +341,20 @@ export const addToGroup = async (req: Request | any, res: Response): Promise<voi
       .populate('admins', '-password')
       .populate('createdBy', '-password');
 
+    // Create system message for adding member
+    const targetUser = await User.findById(userId).select('name');
+    const systemMsg = await Message.create({
+      chatId,
+      senderId: req.user._id,
+      text: `${req.user.name} added ${targetUser?.name || 'someone'} to the group`,
+      isSystem: true,
+      readBy: [req.user._id],
+    });
+
     // Notify all participants
-    io.to(chatId.toString()).emit('member-added', { chatId, userId, chat: added });
+    io.to(chatId.toString()).emit('member-added', { chatId, userId, chat: added, systemMsg });
     added?.participants.forEach((p: any) => {
-       io.to(p._id.toString()).emit('member-added', { chatId, userId, chat: added });
+       io.to(p._id.toString()).emit('member-added', { chatId, userId, chat: added, systemMsg });
     });
 
     res.status(200).json(added);
@@ -368,11 +401,21 @@ export const removeFromGroup = async (req: Request | any, res: Response): Promis
       .populate('admins', '-password')
       .populate('createdBy', '-password');
 
+    // Create system message for removing member
+    const targetUser = await User.findById(userId).select('name');
+    const systemMsg = await Message.create({
+      chatId,
+      senderId: req.user._id,
+      text: `${req.user.name} removed ${targetUser?.name || 'someone'} from the group`,
+      isSystem: true,
+      readBy: [req.user._id],
+    });
+
     // Notify all participants including the removed one
-    io.to(chatId.toString()).emit('member-removed', { chatId, userId });
-    io.to(userId.toString()).emit('member-removed', { chatId, userId });
+    io.to(chatId.toString()).emit('member-removed', { chatId, userId, systemMsg });
+    io.to(userId.toString()).emit('member-removed', { chatId, userId, systemMsg });
     removed?.participants.forEach((p: any) => {
-       io.to(p._id.toString()).emit('member-removed', { chatId, userId });
+       io.to(p._id.toString()).emit('member-removed', { chatId, userId, systemMsg });
     });
 
     res.status(200).json(removed);
@@ -410,10 +453,19 @@ export const leaveGroup = async (req: Request | any, res: Response): Promise<voi
       { new: true }
     );
 
+    // Create system message for leaving group
+    const systemMsg = await Message.create({
+      chatId,
+      senderId: uid,
+      text: `${req.user.name} left the group`,
+      isSystem: true,
+      readBy: [uid],
+    });
+
     // Notify others
-    io.to(chatId.toString()).emit('user-left', { chatId, userId: uid });
+    io.to(chatId.toString()).emit('user-left', { chatId, userId: uid, systemMsg });
     chat.participants.forEach((p: any) => {
-      io.to(p._id.toString()).emit('user-left', { chatId, userId: uid });
+      io.to(p._id.toString()).emit('user-left', { chatId, userId: uid, systemMsg });
     });
 
     res.status(200).json({ left: true });
@@ -481,7 +533,19 @@ export const updateGroupSettings = async (req: Request | any, res: Response): Pr
       { new: true }
     );
 
-    res.status(200).json(updatedChat);
+    // Create system message for settings update
+    const systemMsg = await Message.create({
+      chatId,
+      senderId: req.user._id,
+      text: `${req.user.name} updated group settings`,
+      isSystem: true,
+      readBy: [req.user._id],
+    });
+
+    // Notify all participants
+    io.to(chatId.toString()).emit('settings-updated', { chatId, settings: updatedChat?.groupSettings, systemMsg });
+
+    res.status(200).json({ chat: updatedChat, systemMsg });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

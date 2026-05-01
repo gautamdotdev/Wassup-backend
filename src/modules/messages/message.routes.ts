@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   sendMessage, fetchMessages, markMessagesRead,
-  toggleReaction, searchMessages, deleteMessage
+  toggleReaction, searchMessages, deleteMessage, editMessage
 } from './message.controller.js';
 import { protectRoute } from '../../middlewares/auth.middleware.js';
 
@@ -11,6 +11,7 @@ const router = express.Router();
 router.post('/',                     protectRoute, sendMessage);
 router.post('/read/:chatId',         protectRoute, markMessagesRead);
 router.post('/:id/react',            protectRoute, toggleReaction);
+router.patch('/:id',                 protectRoute, editMessage);
 router.delete('/:id',                protectRoute, deleteMessage);
 router.get('/:chatId/search',        protectRoute, searchMessages);
 router.get('/:chatId',               protectRoute, fetchMessages);

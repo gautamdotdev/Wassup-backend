@@ -9,7 +9,9 @@ export const allUsers = async (req: Request | any, res: Response): Promise<void>
     : {};
 
   try {
-    const users = await User.find(keyword).find({ _id: { $ne: req.user._id } }).select('-password');
+    const users = await User.find(keyword)
+      .find({ _id: { $ne: req.user._id }, name: { $ne: '__pending__' } })
+      .select('-password');
     res.status(200).json(users);
   } catch (error: any) {
     console.error('Error fetching users:', error.message);

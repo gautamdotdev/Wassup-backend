@@ -19,6 +19,11 @@ export interface IMessage extends Document {
    */
   readBy: mongoose.Types.ObjectId[];
   reactions: Array<{ user: mongoose.Types.ObjectId; emoji: string }>;
+  deletedBy: mongoose.Types.ObjectId[];
+  isSystem?: boolean;
+  isEdited?: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const MessageSchema: Schema = new Schema({
@@ -31,6 +36,9 @@ const MessageSchema: Schema = new Schema({
   deliveredTo: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   readBy:     [{ type: Schema.Types.ObjectId, ref: 'User' }],
   reactions:  [{ user: { type: Schema.Types.ObjectId, ref: 'User' }, emoji: { type: String } }],
+  deletedBy:  [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  isSystem:   { type: Boolean, default: false },
+  isEdited:   { type: Boolean, default: false },
 }, {
   timestamps: true,
 });
