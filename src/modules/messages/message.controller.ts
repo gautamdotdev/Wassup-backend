@@ -211,7 +211,7 @@ export const deleteMessage = async (
 ): Promise<void> => {
   const { id } = req.params;
   const uid = req.user._id.toString();
-  const { deleteForEveryone } = req.body;
+  const deleteForEveryone = req.body.deleteForEveryone || req.query.deleteForEveryone === "true";
 
   try {
     const msg = await Message.findById(id).populate("chatId");
@@ -285,13 +285,32 @@ export const editMessage = async (
     msg.isEdited = true;
     await msg.save();
 
+    // Fetch chat to check type
+    const chat = await Chat.findById(msg.chatId).populate<{
+      participants: { _id: any; name: string }[];
+    }>("participants", "name");
+
+    let systemMsg = null;
+    // Only show "edited a message" system message in GROUP chats
+    if (chat?.chatType === "group") {
+      const sender = chat?.participants.find((p) => p._id.toString() === uid);
+      systemMsg = await Message.create({
+        chatId: msg.chatId,
+        senderId: req.user._id,
+        text: `${sender?.name || "Someone"} edited a message`,
+        isSystem: true,
+        readBy: [req.user._id],
+      });
+    }
+
     io.to(msg.chatId.toString()).emit("message edited", {
       messageId: id,
       text: newText,
       isEdited: true,
+      systemMsg,
     });
 
-    res.status(200).json({ message: msg });
+    res.status(200).json({ message: msg, systemMsg });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

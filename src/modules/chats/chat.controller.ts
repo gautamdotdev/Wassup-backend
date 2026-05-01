@@ -19,7 +19,7 @@ export const accessChat = async (req: Request | any, res: Response): Promise<voi
   }
 
   try {
-    // Check if they are connected
+    // Check if they are connected OR share a common group
     const connection = await Connection.findOne({
       $or: [
         { senderId: req.user._id, receiverId: targetId, status: 'accepted' },
@@ -28,8 +28,16 @@ export const accessChat = async (req: Request | any, res: Response): Promise<voi
     });
 
     if (!connection) {
-      res.status(403).json({ error: 'You must be connected to this user to chat' });
-      return;
+      // Allow if they share at least one group chat
+      const sharedGroup = await Chat.findOne({
+        chatType: 'group',
+        participants: { $all: [req.user._id, targetId] }
+      });
+
+      if (!sharedGroup) {
+        res.status(403).json({ error: 'You must be connected to this user to chat' });
+        return;
+      }
     }
 
     // Check if chat already exists
@@ -156,14 +164,17 @@ export const setChatTheme = async (req: Request | any, res: Response): Promise<v
   try {
     const chat = await Chat.findByIdAndUpdate(chatId, { theme }, { new: true });
     
-    // Create system message for theme update
-    const systemMsg = await Message.create({
-      chatId,
-      senderId: req.user._id,
-      text: `${req.user.name} changed the chat theme`,
-      isSystem: true,
-      readBy: [req.user._id],
-    });
+    let systemMsg = null;
+    // Only show "changed theme" system message in GROUP chats
+    if (chat?.chatType === 'group') {
+      systemMsg = await Message.create({
+        chatId,
+        senderId: req.user._id,
+        text: `${req.user.name} changed the chat theme`,
+        isSystem: true,
+        readBy: [req.user._id],
+      });
+    }
 
     // Notify all participants
     io.to(chatId.toString()).emit('theme-updated', { chatId, theme, systemMsg });
