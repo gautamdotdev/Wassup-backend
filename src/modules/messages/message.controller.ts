@@ -10,10 +10,11 @@ import admin from "../../config/firebaseAdmin.js";
  *   "delivered" → deliveredTo has someone
  *   "sent"      → nobody else has received it yet
  */
-function deriveStatus(m: any, senderId: string): "sent" | "delivered" | "seen" {
-  const readByOthers = (m.readBy || []).some(
-    (id: any) => id.toString() !== senderId,
-  );
+export function deriveStatus(m: any, senderId: string): "sent" | "delivered" | "seen" {
+  const readByOthers = (m.readBy || []).some((u: any) => {
+    const uid = (u._id || u).toString();
+    return uid !== senderId;
+  });
   if (readByOthers) return "seen";
 
   const delivered = (m.deliveredTo || []).length > 0;
@@ -132,9 +133,16 @@ export const fetchMessages = async (
 ): Promise<void> => {
   try {
     const uid = req.user._id.toString();
+    const { cursor, limit = 30 } = req.query;
+    const pageSize = Math.min(Number(limit), 100);
 
     // Respect per-user clear time
     const chat = await Chat.findById(req.params.chatId).select("clearedAt");
+    if (!chat) {
+      res.status(404).json({ error: "Chat not found" });
+      return;
+    }
+
     const clearEntry = chat?.clearedAt?.find(
       (c: any) => c.user.toString() === uid,
     );
@@ -144,16 +152,31 @@ export const fetchMessages = async (
       chatId: req.params.chatId,
       deletedBy: { $ne: uid },
     };
-    if (clearedAt) query.createdAt = { $gt: clearedAt };
 
+    if (cursor) {
+      query.createdAt = { $lt: new Date(cursor as string) };
+    }
+    if (clearedAt) {
+      if (query.createdAt) {
+        query.createdAt.$gt = clearedAt;
+      } else {
+        query.createdAt = { $gt: clearedAt };
+      }
+    }
+
+    // Fetch messages sorted by latest first for pagination, then we'll reverse for the client
     const messages = await Message.find(query)
       .populate("senderId", "name avatar email")
       .populate("chatId")
       .populate("replyTo", "text senderId")
       .populate("readBy", "name avatar _id")
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: -1 })
+      .limit(pageSize);
 
-    const withStatus = messages.map((m: any) => {
+    // Reverse to show in chronological order
+    const chronological = messages.reverse();
+
+    const withStatus = chronological.map((m: any) => {
       const senderId = (m.senderId?._id || m.senderId)?.toString();
       const obj = m.toObject();
       obj.tickStatus = deriveStatus(obj, senderId);
@@ -330,6 +353,7 @@ export const markMessagesRead = async (
   const userId = req.user._id;
 
   try {
+    // 1. Mark individual messages as read (for tick status)
     await Message.updateMany(
       {
         chatId,
@@ -339,6 +363,23 @@ export const markMessagesRead = async (
       { $addToSet: { readBy: userId } },
     );
 
+    // 2. Update the user's read pointer in the Chat model
+    // Find the latest message to set as the lastReadMessageId
+    const latestMsg = await Message.findOne({ chatId }).sort({ createdAt: -1 });
+
+    await Chat.findByIdAndUpdate(chatId, {
+      $pull: { readPointers: { user: userId } }
+    });
+    await Chat.findByIdAndUpdate(chatId, {
+      $push: {
+        readPointers: {
+          user: userId,
+          lastReadMessageId: latestMsg?._id,
+          lastReadAt: new Date(),
+        }
+      }
+    });
+
     const chat = await Chat.findById(chatId)
       .populate("participants", "-password")
       .populate({
@@ -347,11 +388,9 @@ export const markMessagesRead = async (
       });
 
     if (chat) {
-      // Fetch current user details to include in broadcast
       const User = (await import("../users/user.model.js")).default;
       const readByUser = await User.findById(userId).select("name avatar _id");
 
-      // In both DM and Group, notify all participants that this user read messages
       chat.participants.forEach((p: any) => {
         const pId = p._id.toString();
         if (pId !== userId.toString()) {

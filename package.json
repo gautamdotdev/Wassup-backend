@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register server.ts",
-    "build": "tsc && tsc-alias"
+    "build": "tsc && tsc-alias",
+    "docker:publish": "docker build -t makwanagautam/wassup-backend . && docker push makwanagautam/wassup-backend"
   },
   "keywords": [],
   "author": "",

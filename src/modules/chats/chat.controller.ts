@@ -88,15 +88,33 @@ export const fetchChats = async (req: Request | any, res: Response): Promise<voi
     const Message = (await import('../messages/message.model.js')).default;
     const chatsWithMeta = await Promise.all(
       chats.map(async (chat) => {
-        const unreadCount = await Message.countDocuments({
+        const pointer = chat.readPointers?.find((p: any) => p.user.toString() === uid.toString());
+        
+        const unreadQuery: any = {
           chatId: chat._id,
           senderId: { $ne: uid },
-          readBy: { $ne: uid }
-        });
+        };
+
+        if (pointer?.lastReadAt) {
+          unreadQuery.createdAt = { $gt: pointer.lastReadAt };
+        } else {
+          // Fallback to individual readBy check if no pointer exists yet
+          unreadQuery.readBy = { $ne: uid };
+        }
+
+        const unreadCount = await Message.countDocuments(unreadQuery);
+        
         const obj: any = chat.toObject();
         obj.unreadCount = unreadCount;
         obj.isMuted = chat.mutedBy?.some((m: any) => m.toString() === uid.toString()) ?? false;
         obj.isLocked = chat.locks?.some((l: any) => l.user.toString() === uid.toString()) ?? false;
+
+        if (obj.latestMessage) {
+          const { deriveStatus } = await import('../messages/message.controller.js');
+          const latestSenderId = (obj.latestMessage.senderId?._id || obj.latestMessage.senderId)?.toString();
+          obj.latestMessage.tickStatus = deriveStatus(obj.latestMessage, latestSenderId);
+        }
+
         return obj;
       })
     );

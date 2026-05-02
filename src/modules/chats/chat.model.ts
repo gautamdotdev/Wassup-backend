@@ -20,6 +20,8 @@ export interface IChat extends Document {
   theme?: string;
   // Lock – per-user lock password hash
   locks: Array<{ user: mongoose.Types.ObjectId; passwordHash: string }>;
+  // Read Pointers – tracks per-user last read message
+  readPointers: Array<{ user: mongoose.Types.ObjectId; lastReadMessageId?: mongoose.Types.ObjectId; lastReadAt: Date }>;
   // Settings
   groupSettings: {
     canSendMessage: "all" | "admins";
@@ -52,6 +54,13 @@ const ChatSchema: Schema = new Schema(
       {
         user: { type: Schema.Types.ObjectId, ref: "User" },
         passwordHash: { type: String },
+      },
+    ],
+    readPointers: [
+      {
+        user: { type: Schema.Types.ObjectId, ref: "User" },
+        lastReadMessageId: { type: Schema.Types.ObjectId, ref: "Message" },
+        lastReadAt: { type: Date, default: Date.now },
       },
     ],
     groupSettings: {

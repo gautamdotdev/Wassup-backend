@@ -15,15 +15,14 @@ app.set("trust proxy", 1);
 // 1. Permissive CORS (Priority #1)
 app.use(
   cors({
-    origin: true,
+    origin: config.cors.clientUrl,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
       "X-Requested-With",
       "Accept",
-      "ngrok-skip-browser-warning",
-      "Authorization"
+      "ngrok-skip-browser-warning"
     ],
     credentials: true,
   }),

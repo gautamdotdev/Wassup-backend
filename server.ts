@@ -13,7 +13,7 @@ const server = http.createServer(app);
 // Setup Socket.io
 export const io = new Server(server, {
   cors: {
-    origin: true,
+    origin: config.cors.clientUrl,
 
 
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
