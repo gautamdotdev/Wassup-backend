@@ -90,9 +90,24 @@ export const fetchChats = async (req: Request | any, res: Response): Promise<voi
       chats.map(async (chat) => {
         const pointer = chat.readPointers?.find((p: any) => p.user.toString() === uid.toString());
         
+        // Find the actual latest message for THIS user (respecting soft deletes and clear times)
+        const userLatestQuery: any = { 
+          chatId: chat._id, 
+          deletedBy: { $ne: uid } 
+        };
+        const clearEntry = chat.clearedAt?.find((c: any) => c.user.toString() === uid.toString());
+        if (clearEntry) {
+          userLatestQuery.createdAt = { $gt: clearEntry.at };
+        }
+
+        const userLatestMsg = await Message.findOne(userLatestQuery)
+          .populate('senderId', 'name avatar _id')
+          .sort({ createdAt: -1 });
+
         const unreadQuery: any = {
           chatId: chat._id,
           senderId: { $ne: uid },
+          deletedBy: { $ne: uid }
         };
 
         if (pointer?.lastReadAt) {
@@ -102,9 +117,18 @@ export const fetchChats = async (req: Request | any, res: Response): Promise<voi
           unreadQuery.readBy = { $ne: uid };
         }
 
+        if (clearEntry) {
+          if (unreadQuery.createdAt) {
+            unreadQuery.createdAt.$gt = clearEntry.at;
+          } else {
+            unreadQuery.createdAt = { $gt: clearEntry.at };
+          }
+        }
+
         const unreadCount = await Message.countDocuments(unreadQuery);
         
         const obj: any = chat.toObject();
+        obj.latestMessage = userLatestMsg || chat.latestMessage;
         obj.unreadCount = unreadCount;
         obj.isMuted = chat.mutedBy?.some((m: any) => m.toString() === uid.toString()) ?? false;
         obj.isLocked = chat.locks?.some((l: any) => l.user.toString() === uid.toString()) ?? false;

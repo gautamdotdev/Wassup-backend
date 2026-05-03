@@ -250,6 +250,13 @@ export const deleteMessage = async (
     if (deleteForEveryone && (isSender || isAdmin)) {
       const chatId = chat._id.toString();
       await msg.deleteOne();
+      
+      // Update latestMessage in Chat if this was the latest message
+      if (chat.latestMessage?.toString() === id) {
+        const newLatest = await Message.findOne({ chatId }).sort({ createdAt: -1 });
+        await Chat.findByIdAndUpdate(chatId, { latestMessage: newLatest?._id || null });
+      }
+
       // Broadcast deletion to all members
       io.to(chatId).emit("message deleted", { messageId: id, chatId });
       res.status(200).json({ deleted: true, forEveryone: true });
